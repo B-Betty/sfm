@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
     cv_bridge 
     )
 
+
 find_package(OpenCV REQUIRED)
 find_package(Eigen3  REQUIRED)
 find_package(Ceres REQUIRED)
@@ -36,6 +37,7 @@ add_executable(sfm
     src/DBoW/FBrief.cpp
     src/solve_5pts.cpp
     src/initial_sfm.cpp
-    src/feature_manager.cpp)
+    src/feature_manager.cpp
+    src/BA.cpp)
 
 target_link_libraries(sfm ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})

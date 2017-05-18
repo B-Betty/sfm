@@ -274,8 +274,8 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	}
 	ceres::Solver::Options options;
 	options.linear_solver_type = ceres::DENSE_SCHUR;
-	//options.minimizer_progress_to_stdout = true;
-	options.max_solver_time_in_seconds = 0.2;
+	options.minimizer_progress_to_stdout = true;
+	//options.max_solver_time_in_seconds = 10;
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);
 	std::cout << summary.BriefReport() << "\n";

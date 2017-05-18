@@ -23,6 +23,7 @@
 #include <Eigen/Eigen>
 #include <queue>
 #include "feature_extractor.h"
+#include "BA.h"
 
 //for rand()
 #include <stdlib.h>
@@ -38,6 +39,7 @@ ros::Publisher pub_img;
 ros::Publisher pub_imu;
 
 FeatureTracker feature_tracker;
+VINS vins;
 
 int main(int argc, char **argv)
 {
@@ -65,12 +67,14 @@ int main(int argc, char **argv)
     std::fstream imuDataFile(data_dir + "imu_data", std::ios_base::in);
     Mat rawImage;
     namedWindow("track", CV_WINDOW_NORMAL);
-    
+    double header = 1.0;
+    cv::Mat corre_image;
     while(true)
     {
         sequence >> rawImage;
         if(rawImage.empty())
         {
+            imshow("track",corre_image);
             cout << "End of Sequence" << endl;
             break;
         }
@@ -81,6 +85,11 @@ int main(int argc, char **argv)
             cv::Mat resultImage;
             feature_tracker.readImage(grayImage, resultImage);
             imshow("track",resultImage);
+            ostringstream convert;
+            convert << "/home/peiliang/catkin_ws/src/sfm/data/" << header <<  "match.jpg";
+            cv::imwrite( convert.str().c_str(), resultImage);
+            vins.processImage(feature_tracker.image_msg, header, grayImage, corre_image);
+            header += 0.1;
             waitKey(-1);
             //sleep(0.3);
         }

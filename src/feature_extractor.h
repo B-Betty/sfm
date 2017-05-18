@@ -5,7 +5,9 @@
 #include <opencv2/opencv.hpp>
 #include "DBoW/FBrief.h"
 #include "DVision/DVision.h"
-
+#include "tic_toc.h"
+#include "solve_5pts.h"
+#include "initial_sfm.h"
 
 using namespace Eigen;
 using namespace cv;
@@ -67,6 +69,9 @@ class FeatureTracker
 
 	bool inAera(cv::Point2f pt, cv::Point2f center, float area_size);
 
+	void triangulatePoint(Eigen::Matrix<double, 3, 4> &Pose0, Eigen::Matrix<double, 3, 4> &Pose1,
+						Vector2d &point0, Vector2d &point1, Vector3d &point_3d);
+	MotionEstimator m_estimator;
     cv::Mat pre_img, cur_img;
     vector<cv::Point2f> n_pts;
     vector<cv::Point2f> pre_pts, cur_pts;

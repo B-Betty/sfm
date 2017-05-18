@@ -37,7 +37,7 @@ void FeatureTracker::addPoints()
         track_cnt.push_back(1);
         cur_des.push_back(n_des[i]);
     }
-    printf("add end\n");
+    printf("add end cur_pts %d, ids %d %d\n", cur_pts.size(), ids.size(), track_cnt.size());
 }
 
 bool FeatureTracker::inAera(cv::Point2f pt, cv::Point2f center, float area_size)
@@ -57,7 +57,7 @@ void FeatureTracker::rejectWithF()
     {
         vector<uchar> status;
         printf("reject\n");
-        cv::findFundamentalMat(cur_pts, pre_pts, cv::FM_RANSAC, 10.0, 0.98, status);
+        cv::findFundamentalMat(cur_pts, pre_pts, cv::FM_RANSAC, 5.0, 0.98, status);
         printf("reject finish\n");
         reduceVector(pre_pts, status);
         reduceVector(pre_des, status);
@@ -68,6 +68,23 @@ void FeatureTracker::rejectWithF()
         printf("loop_match ransac old %d, cur %d\n", pre_pts.size(), cur_pts.size());
     }
 }
+
+void FeatureTracker::triangulatePoint(Eigen::Matrix<double, 3, 4> &Pose0, Eigen::Matrix<double, 3, 4> &Pose1,
+						Vector2d &point0, Vector2d &point1, Vector3d &point_3d)
+{
+	Matrix4d design_matrix = Matrix4d::Zero();
+	design_matrix.row(0) = point0[0] * Pose0.row(2) - Pose0.row(0);
+	design_matrix.row(1) = point0[1] * Pose0.row(2) - Pose0.row(1);
+	design_matrix.row(2) = point1[0] * Pose1.row(2) - Pose1.row(0);
+	design_matrix.row(3) = point1[1] * Pose1.row(2) - Pose1.row(1);
+	Vector4d triangulated_point;
+	triangulated_point =
+		      design_matrix.jacobiSvd(Eigen::ComputeFullV).matrixV().rightCols<1>();
+	point_3d(0) = triangulated_point(0) / triangulated_point(3);
+	point_3d(1) = triangulated_point(1) / triangulated_point(3);
+	point_3d(2) = triangulated_point(2) / triangulated_point(3);
+}
+
 /**
 ** search matches by guide descriptor match
 **
@@ -75,7 +92,8 @@ void FeatureTracker::rejectWithF()
 
 void FeatureTracker::matchByDes(const std::vector<cv::KeyPoint> &cur_keys, std::vector<BRIEF::bitset> &new_cur_des)
 {
-    printf("loop_match before old %d %d, cur %d %d\n", pre_des.size(), pre_pts.size(), cur_des.size(), cur_keys.size());
+	TicToc t_match;
+    printf("match before pre %d cur %d %d %d\n", pre_pts.size(), cur_keys.size(), ids.size(), track_cnt.size());
     cur_pts.clear();
     n_pts.clear();
 	n_des.clear();
@@ -122,7 +140,64 @@ void FeatureTracker::matchByDes(const std::vector<cv::KeyPoint> &cur_keys, std::
     cur_des = cur_des_new;
     track_cnt = track_cnt_new;
     ids = ids_new;
-    printf("loop_match after old %d %d, cur %d %d %d %d\n", pre_des.size(), pre_pts.size(), cur_des.size(), cur_pts.size(),track_cnt.size(), ids.size());
+    printf("match after pre %d, cur %d %d %d\n", pre_pts.size(), cur_pts.size(), ids.size(), track_cnt.size());
+    vector<pair<Vector3d, Vector3d>> corres;
+    for(int i = 0; i < pre_pts.size(); i++)
+    {
+    	Vector3d a,b;
+    	a << (pre_pts[i].x - U0)/FX,
+        	 (pre_pts[i].y - V0)/FY,
+         	 1.0;
+
+        b << (cur_pts[i].x - U0)/FX,
+        	 (cur_pts[i].y - V0)/FY,
+         	 1.0;
+    	corres.push_back(make_pair(a, b));
+    }
+    Matrix3d relative_R;
+    Vector3d relative_T;
+    m_estimator.solveRelativeRT(corres, relative_R, relative_T);
+    Quaterniond q0, q1;
+    Vector3d T0, T1;
+    q0.w() = 1;
+	q0.x() = 0;
+	q0.y() = 0;
+	q0.z() = 0;
+	T0.setZero();
+	q1 = q0 * Quaterniond(relative_R);
+	T1 = relative_T;
+	
+	Matrix3d c_Rotation0, c_Rotation1;
+	Vector3d c_Translation0, c_Translation1;
+	Quaterniond c_Quat0, c_Quat1;
+	double c_rotation0[4], c_rotation1[4];
+	double c_translation0[3], c_translation1[3];
+	Eigen::Matrix<double, 3, 4> Pose0, Pose1;
+
+	c_Quat0 = q0.inverse();
+	c_Rotation0 = c_Quat0.toRotationMatrix();
+	c_Translation0 = -1 * (c_Rotation0 * T0);
+	Pose0.block<3, 3>(0, 0) = c_Rotation0;
+	Pose0.block<3, 1>(0, 3) = c_Translation0;
+
+	c_Quat1 = q1.inverse();
+	c_Rotation1 = c_Quat1.toRotationMatrix();
+	c_Translation1 = -1 * (c_Rotation1 * T1);
+	Pose1.block<3, 3>(0, 0) = c_Rotation1;
+	Pose1.block<3, 1>(0, 3) = c_Translation1;
+
+    for(int i = 0; i< corres.size(); i++)
+    {
+    	Vector3d point_3d;
+    	Vector2d a, b;
+    	a << corres[i].first.x(),
+    	     corres[i].first.y();
+    	b << corres[i].second.x(),
+    	     corres[i].second.y();
+		triangulatePoint(Pose0, Pose1, a, b, point_3d);
+		cout << point_3d.transpose() << endl;
+    }
+    printf("match time %lf\n", t_match.toc());
 }
 
 void FeatureTracker::readImage(const cv::Mat &_img, cv::Mat &result)
@@ -143,18 +218,17 @@ void FeatureTracker::readImage(const cv::Mat &_img, cv::Mat &result)
     cur_des.clear();
 
 	vector<cv::KeyPoint> cur_keypoints;
- 
+ 	TicToc t_detect;
     std::string PATTERN_FILE = "/home/peiliang/catkin_ws/src/sfm/src/brief_pattern.yml";
     const char *BRIEF_PATTERN_FILE = PATTERN_FILE.c_str();
     BriefExtractor extractor(BRIEF_PATTERN_FILE);
     extractor(cur_img, cur_keypoints, cur_des);
-
+    printf("detect brief feature %d with %lf ms\n", cur_keypoints.size(), t_detect.toc());
     for(int i = 0; i < cur_keypoints.size(); i++)
     	cv::circle(result, cur_keypoints[i].pt, 20, cv::Scalar(0), 5);
   
     if (pre_pts.size() > 0)
     {
-    	printf("match\n");
     	std::vector<BRIEF::bitset> new_cur_des;
     	matchByDes(cur_keypoints, new_cur_des);
     	assert(cur_pts.size() == pre_pts.size());   	
@@ -162,12 +236,10 @@ void FeatureTracker::readImage(const cv::Mat &_img, cv::Mat &result)
     else
     {
     	for(int i = 0; i < cur_keypoints.size(); i++)
-    		cur_pts.push_back(cur_keypoints[i].pt);
-    	n_pts = cur_pts;
+    		n_pts.push_back(cur_keypoints[i].pt);
     	n_des = cur_des;
     	cur_pts.clear();
     	cur_des.clear();
-    	printf("first time extract %d %d\n", n_pts.size(), n_des.size());
     }
     cv::Mat match_img;
     cv::vconcat(pre_img, cur_img, match_img);
@@ -186,7 +258,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, cv::Mat &result)
         n++;
 
     addPoints();
-    printf("new point size %d\n", n_pts.size());
+    //printf("new point size %d\n", n_pts.size());
 
     pre_img = cur_img;
     pre_pts = cur_pts;
@@ -202,14 +274,14 @@ void FeatureTracker::readImage(const cv::Mat &_img, cv::Mat &result)
         if (!completed)
             break;
     }
-    cout << "update----------------------" << endl;
+    //cout << "update----------------------" << endl;
     for(int i = 0; i<ids.size(); i++)
     {
         double x = (cur_pts[i].x - U0)/FX;
         double y = (cur_pts[i].y - V0)/FY;
         double z = 1.0;
         image_msg[(ids[i])] = (Vector3d(x, y, z));  
-        cout << ids[i] << ": " << x<< ", "<< y<< endl;
+        //cout << ids[i] << " " << track_cnt[i] << ": " << x<< ", "<< y<< endl;
     }
 }
 

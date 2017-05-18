@@ -13,7 +13,7 @@ using namespace Eigen;
 #include <ros/console.h>
 #include <ros/assert.h>
 
-#define WINDOW_SIZE 11
+#define WINDOW_SIZE 9
 #define COMPENSATE_ROTATION false
 #define MIN_PARALLAX_POINT ((double)(3.0/549))
 #define MIN_PARALLAX ((double)(10.0/549))
